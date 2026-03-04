@@ -46,6 +46,9 @@ function parseArgs(argv) {
       case '--dry-run':
         opts.dryRun = true;
         break;
+      case '--view':
+        opts.viewMode = true;
+        break;
       case '--help':
       case '-h':
         showHelp();
@@ -78,7 +81,11 @@ async function main() {
   switch (command) {
     case 'run': {
       const runner = require('../src/runner');
-      await runner.run(positional[0] || null, opts);
+      if (opts.viewMode) {
+        await runner.view(positional[0] || null, opts);
+      } else {
+        await runner.run(positional[0] || null, opts);
+      }
       break;
     }
     case 'setup': {

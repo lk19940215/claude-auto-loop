@@ -1,6 +1,6 @@
 {
   "name": "claude-coder",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Claude Coder — Autonomous coding agent harness powered by Claude Code SDK. Scan, plan, code, validate, git-commit in a loop.",
   "bin": {
     "claude-coder": "bin/cli.js"

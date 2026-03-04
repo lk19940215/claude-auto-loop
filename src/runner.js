@@ -100,7 +100,7 @@ function appendProgress(entry) {
   const p = paths();
   let progress = { sessions: [] };
   if (fs.existsSync(p.progressFile)) {
-    try { progress = JSON.parse(fs.readFileSync(p.progressFile, 'utf8')); } catch { /* reset */ }
+    try { progress = JSON.parse(fs.readFileSync(p.progressFile, 'utf8').replace(/[\u201c\u201d]/g, '"')); } catch { /* reset */ }
   }
   if (!Array.isArray(progress.sessions)) progress.sessions = [];
   progress.sessions.push(entry);
@@ -111,7 +111,7 @@ function updateSessionHistory(sessionData, sessionNum) {
   const p = paths();
   let sr = { current: null, history: [] };
   if (fs.existsSync(p.sessionResult)) {
-    try { sr = JSON.parse(fs.readFileSync(p.sessionResult, 'utf8')); } catch { /* reset */ }
+    try { sr = JSON.parse(fs.readFileSync(p.sessionResult, 'utf8').replace(/[\u201c\u201d]/g, '"')); } catch { /* reset */ }
     if (!sr.history && sr.session_result) {
       sr = { current: sr, history: [] };
     }

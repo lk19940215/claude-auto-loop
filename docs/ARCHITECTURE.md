@@ -278,7 +278,65 @@ sequenceDiagram
 
 ---
 
-## 9. 后续优化方向
+## 9. Claude Agent SDK V1/V2 对比与迁移计划
+
+当前使用 **V1 稳定 API**（`query()`），V2 为 preview 状态（`unstable_` 前缀）。
+
+### V1 vs V2 API 对比
+
+| 维度 | V1 `query()` | V2 `send()/stream()` |
+|------|-------------|---------------------|
+| **状态** | 稳定，生产可用 | `unstable_` 前缀，preview |
+| **入口函数** | `query({ prompt, options })` | `unstable_v2_createSession(opts)` / `unstable_v2_prompt()` |
+| **多轮会话** | 需手动管理 AsyncGenerator | `session.send()` + `session.stream()`，更简洁 |
+| **会话恢复** | `options.resume: sessionId` | `unstable_v2_resumeSession(id)` |
+| **Hooks** | `options.hooks: { PreToolUse, PostToolUse, ... }` | 未支持 |
+| **Subagents** | `options.agents: { name: AgentDefinition }` | 未支持 |
+| **Session Fork** | `options.forkSession: true` | 未支持 |
+| **Plugins** | `options.plugins: [{ type, path }]` | 未支持 |
+| **结构化输出** | `options.outputFormat: { type: 'json_schema', schema }` | 支持 |
+| **文件检查点** | `options.enableFileCheckpointing + rewindFiles()` | 未明确 |
+| **Cost Tracking** | `SDKResultMessage.total_cost_usd` | `SDKResultMessage.total_cost_usd` |
+| **权限控制** | `canUseTool`, `permissionMode`, `allowedTools`, `disallowedTools` | 继承 |
+
+### 当前实现使用的 V1 特性
+
+```javascript
+query({
+  prompt,
+  options: {
+    systemPrompt,                      // 注入 CLAUDE.md
+    allowedTools,                      // 工具白名单
+    permissionMode: 'bypassPermissions',
+    allowDangerouslySkipPermissions: true,
+    model,                             // 从 .env 传入
+    env,                               // 环境变量透传
+    settingSources: ['project'],       // 加载项目 CLAUDE.md
+    hooks: { PreToolUse: [...] },      // 实时 spinner 监控
+  }
+})
+```
+
+### V2 迁移条件（等待稳定后）
+
+1. V2 去掉 `unstable_` 前缀，正式发布
+2. V2 支持 Hooks（当前项目依赖 PreToolUse 做 spinner 和 activity log）
+3. V2 支持 Subagents（未来可能用于扫描 Agent / 编码 Agent 分离）
+
+### 可利用但尚未使用的 V1 特性
+
+| 特性 | 说明 | 优先级 |
+|------|------|--------|
+| `maxBudgetUsd` | SDK 内置成本上限，替代自研追踪 | P0 |
+| `effort` | 控制思考深度（`low`/`medium`/`high`/`max`） | P1 |
+| `enableFileCheckpointing` | 文件操作检查点，比 git reset 更精细 | P1 |
+| `outputFormat` | 结构化输出，让 Agent 直接输出 JSON 格式 | P1 |
+| `agents` | 定义子 Agent，不同模型/工具集 | P2 |
+| `betas` | 扩展上下文窗口 | P2 |
+
+---
+
+## 10. 后续优化方向
 
 ### P0 — 近期
 

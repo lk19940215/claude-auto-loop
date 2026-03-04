@@ -62,10 +62,11 @@ function extractResult(messages) {
   return null;
 }
 
-function logMessage(message, logStream) {
+function logMessage(message, logStream, indicator) {
   if (message.type === 'assistant' && message.message?.content) {
     for (const block of message.message.content) {
       if (block.type === 'text' && block.text) {
+        if (indicator) process.stderr.write('\r\x1b[K');
         process.stdout.write(block.text);
         if (logStream) logStream.write(block.text);
       }
@@ -106,7 +107,7 @@ async function runCodingSession(sessionNum, opts = {}) {
     const collected = [];
     for await (const message of session) {
       collected.push(message);
-      logMessage(message, logStream);
+      logMessage(message, logStream, indicator);
     }
 
     logStream.end();
@@ -168,7 +169,7 @@ async function runScanSession(requirement, opts = {}) {
     const collected = [];
     for await (const message of session) {
       collected.push(message);
-      logMessage(message, logStream);
+      logMessage(message, logStream, indicator);
     }
 
     logStream.end();
