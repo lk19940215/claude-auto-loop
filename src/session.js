@@ -6,12 +6,75 @@ const { paths, loadConfig, buildEnvVars, getAllowedTools, log } = require('./con
 const { Indicator, inferPhaseStep } = require('./indicator');
 const { buildSystemPrompt, buildCodingPrompt, buildScanPrompt, buildViewPrompt, buildAddPrompt } = require('./prompts');
 
+let _sdkModule = null;
+async function loadSDK() {
+  if (_sdkModule) return _sdkModule;
+
+  const pkgName = '@anthropic-ai/claude-agent-sdk';
+  const attempts = [
+    () => import(pkgName),
+    () => {
+      const { createRequire } = require('module');
+      const resolved = createRequire(__filename).resolve(pkgName);
+      return import(resolved);
+    },
+    () => {
+      const { execSync } = require('child_process');
+      const prefix = execSync('npm prefix -g', { encoding: 'utf8' }).trim();
+      const sdkPath = path.join(prefix, 'lib', 'node_modules', pkgName, 'sdk.mjs');
+      return import(sdkPath);
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      _sdkModule = await attempt();
+      return _sdkModule;
+    } catch { /* try next */ }
+  }
+
+  log('error', `未找到 ${pkgName}`);
+  log('error', `请先安装：npm install -g ${pkgName}`);
+  process.exit(1);
+}
+
 function applyEnvConfig(config) {
   Object.assign(process.env, buildEnvVars(config));
 }
 
+function buildQueryOptions(config, opts = {}) {
+  const base = {
+    allowedTools: getAllowedTools(config),
+    permissionMode: 'bypassPermissions',
+    allowDangerouslySkipPermissions: true,
+    cwd: opts.projectRoot || process.cwd(),
+    env: buildEnvVars(config),
+    settingSources: ['project'],
+  };
+  if (config.model) base.model = config.model;
+  return base;
+}
+
+function extractResult(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].type === 'result') return messages[i];
+  }
+  return null;
+}
+
+function logMessage(message, logStream) {
+  if (message.type === 'assistant' && message.message?.content) {
+    for (const block of message.message.content) {
+      if (block.type === 'text' && block.text) {
+        process.stdout.write(block.text);
+        if (logStream) logStream.write(block.text);
+      }
+    }
+  }
+}
+
 async function runCodingSession(sessionNum, opts = {}) {
-  const { query } = require('@anthropic-ai/claude-agent-sdk');
+  const sdk = await loadSDK();
   const config = loadConfig();
   applyEnvConfig(config);
   const indicator = new Indicator();
@@ -26,46 +89,34 @@ async function runCodingSession(sessionNum, opts = {}) {
   indicator.start(sessionNum);
 
   try {
-    const session = query({
-      prompt,
-      options: {
-        systemPrompt,
-        allowedTools: getAllowedTools(config),
-        permissionMode: 'bypassPermissions',
-        verbose: true,
-        cwd: opts.projectRoot || process.cwd(),
-        timeout_ms: config.timeoutMs,
-        hooks: {
-          PreToolUse: [{
-            matcher: '*',
-            callback: (event) => {
-              inferPhaseStep(indicator, event.tool_name, event.tool_input);
-              return { decision: 'allow' };
-            }
-          }]
-        }
-      }
-    });
+    const queryOpts = buildQueryOptions(config, opts);
+    queryOpts.systemPrompt = systemPrompt;
+    queryOpts.hooks = {
+      PreToolUse: [{
+        matcher: '*',
+        hooks: [async (input) => {
+          inferPhaseStep(indicator, input.tool_name, input.tool_input);
+          return {};
+        }]
+      }]
+    };
 
-    let result;
+    const session = sdk.query({ prompt, options: queryOpts });
+
+    const collected = [];
     for await (const message of session) {
-      if (message.content) {
-        const text = typeof message.content === 'string'
-          ? message.content
-          : JSON.stringify(message.content);
-        process.stdout.write(text);
-        logStream.write(text);
-      }
-      result = message;
+      collected.push(message);
+      logMessage(message, logStream);
     }
 
     logStream.end();
     indicator.stop();
 
+    const result = extractResult(collected);
     return {
       exitCode: 0,
-      cost: result?.total_cost_usd || null,
-      tokenUsage: result?.message?.usage || null,
+      cost: result?.total_cost_usd ?? null,
+      tokenUsage: result?.usage ?? null,
       logFile,
     };
   } catch (err) {
@@ -83,7 +134,7 @@ async function runCodingSession(sessionNum, opts = {}) {
 }
 
 async function runScanSession(requirement, opts = {}) {
-  const { query } = require('@anthropic-ai/claude-agent-sdk');
+  const sdk = await loadSDK();
   const config = loadConfig();
   applyEnvConfig(config);
   const indicator = new Indicator();
@@ -100,45 +151,33 @@ async function runScanSession(requirement, opts = {}) {
   log('info', `正在调用 Claude Code 执行项目扫描（${projectType}项目）...`);
 
   try {
-    const session = query({
-      prompt,
-      options: {
-        systemPrompt,
-        allowedTools: getAllowedTools(config),
-        permissionMode: 'bypassPermissions',
-        verbose: true,
-        cwd: opts.projectRoot || process.cwd(),
-        timeout_ms: config.timeoutMs,
-        hooks: {
-          PreToolUse: [{
-            matcher: '*',
-            callback: (event) => {
-              inferPhaseStep(indicator, event.tool_name, event.tool_input);
-              return { decision: 'allow' };
-            }
-          }]
-        }
-      }
-    });
+    const queryOpts = buildQueryOptions(config, opts);
+    queryOpts.systemPrompt = systemPrompt;
+    queryOpts.hooks = {
+      PreToolUse: [{
+        matcher: '*',
+        hooks: [async (input) => {
+          inferPhaseStep(indicator, input.tool_name, input.tool_input);
+          return {};
+        }]
+      }]
+    };
 
-    let result;
+    const session = sdk.query({ prompt, options: queryOpts });
+
+    const collected = [];
     for await (const message of session) {
-      if (message.content) {
-        const text = typeof message.content === 'string'
-          ? message.content
-          : JSON.stringify(message.content);
-        process.stdout.write(text);
-        logStream.write(text);
-      }
-      result = message;
+      collected.push(message);
+      logMessage(message, logStream);
     }
 
     logStream.end();
     indicator.stop();
 
+    const result = extractResult(collected);
     return {
       exitCode: 0,
-      cost: result?.total_cost_usd || null,
+      cost: result?.total_cost_usd ?? null,
       logFile,
     };
   } catch (err) {
@@ -150,7 +189,7 @@ async function runScanSession(requirement, opts = {}) {
 }
 
 async function runViewSession(requirement, opts = {}) {
-  const { query } = require('@anthropic-ai/claude-agent-sdk');
+  const sdk = await loadSDK();
   const p = paths();
   const config = loadConfig();
   applyEnvConfig(config);
@@ -172,25 +211,13 @@ async function runViewSession(requirement, opts = {}) {
   }
 
   try {
-    const session = query({
-      prompt,
-      options: {
-        systemPrompt,
-        allowedTools: getAllowedTools(config),
-        permissionMode: 'bypassPermissions',
-        verbose: true,
-        cwd: opts.projectRoot || process.cwd(),
-        timeout_ms: config.timeoutMs,
-      }
-    });
+    const queryOpts = buildQueryOptions(config, opts);
+    queryOpts.systemPrompt = systemPrompt;
+
+    const session = sdk.query({ prompt, options: queryOpts });
 
     for await (const message of session) {
-      if (message.content) {
-        const text = typeof message.content === 'string'
-          ? message.content
-          : JSON.stringify(message.content);
-        process.stdout.write(text);
-      }
+      logMessage(message, null);
     }
   } catch (err) {
     log('error', `观测模式错误: ${err.message}`);
@@ -198,7 +225,7 @@ async function runViewSession(requirement, opts = {}) {
 }
 
 async function runAddSession(instruction, opts = {}) {
-  const { query } = require('@anthropic-ai/claude-agent-sdk');
+  const sdk = await loadSDK();
   const config = loadConfig();
   applyEnvConfig(config);
 
@@ -210,26 +237,13 @@ async function runAddSession(instruction, opts = {}) {
   const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
   try {
-    const session = query({
-      prompt,
-      options: {
-        systemPrompt,
-        allowedTools: getAllowedTools(config),
-        permissionMode: 'bypassPermissions',
-        verbose: true,
-        cwd: opts.projectRoot || process.cwd(),
-        timeout_ms: config.timeoutMs,
-      }
-    });
+    const queryOpts = buildQueryOptions(config, opts);
+    queryOpts.systemPrompt = systemPrompt;
+
+    const session = sdk.query({ prompt, options: queryOpts });
 
     for await (const message of session) {
-      if (message.content) {
-        const text = typeof message.content === 'string'
-          ? message.content
-          : JSON.stringify(message.content);
-        process.stdout.write(text);
-        logStream.write(text);
-      }
+      logMessage(message, logStream);
     }
 
     logStream.end();

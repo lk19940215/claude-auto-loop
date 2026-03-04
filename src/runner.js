@@ -12,14 +12,28 @@ const { runCodingSession, runViewSession, runAddSession } = require('./session')
 
 const MAX_RETRY = 3;
 
-function requireSdk() {
-  try {
-    require.resolve('@anthropic-ai/claude-agent-sdk');
-  } catch {
-    console.error('错误：未找到 @anthropic-ai/claude-agent-sdk');
-    console.error('请先安装：npm install -g @anthropic-ai/claude-agent-sdk');
-    process.exit(1);
+async function requireSdk() {
+  const pkgName = '@anthropic-ai/claude-agent-sdk';
+  const attempts = [
+    () => { require.resolve(pkgName); return true; },
+    () => {
+      const { createRequire } = require('module');
+      createRequire(__filename).resolve(pkgName);
+      return true;
+    },
+    () => {
+      const prefix = execSync('npm prefix -g', { encoding: 'utf8' }).trim();
+      const sdkPath = path.join(prefix, 'lib', 'node_modules', pkgName);
+      if (fs.existsSync(sdkPath)) return true;
+      throw new Error('not found');
+    },
+  ];
+  for (const attempt of attempts) {
+    try { if (attempt()) return; } catch { /* try next */ }
   }
+  console.error(`错误：未找到 ${pkgName}`);
+  console.error(`请先安装：npm install -g ${pkgName}`);
+  process.exit(1);
 }
 
 function getHead() {
@@ -199,7 +213,7 @@ async function run(requirement, opts = {}) {
       return;
     }
 
-    requireSdk();
+    await requireSdk();
     const scanResult = await scan(requirement, { projectRoot });
     if (!scanResult.success) {
       console.log('');
@@ -215,7 +229,7 @@ async function run(requirement, opts = {}) {
   }
 
   // Coding loop
-  if (!dryRun) requireSdk();
+  if (!dryRun) await requireSdk();
   log('info', `开始编码循环 (最多 ${maxSessions} 个会话) ...`);
   console.log('');
 
@@ -319,7 +333,7 @@ async function run(requirement, opts = {}) {
 }
 
 async function view(requirement, opts = {}) {
-  requireSdk();
+  await requireSdk();
   const projectRoot = getProjectRoot();
   ensureLoopDir();
 
@@ -331,7 +345,7 @@ async function view(requirement, opts = {}) {
 }
 
 async function add(instruction, opts = {}) {
-  requireSdk();
+  await requireSdk();
   const p = paths();
   const projectRoot = getProjectRoot();
   ensureLoopDir();
