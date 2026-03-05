@@ -86,7 +86,8 @@ your-project/
     tests.json              # Verification records
     test.env                # Test credentials (API keys, optional)
     playwright-auth.json    # Playwright login state (optional, via auth command)
-    .runtime/               # Temp files (logs)
+    .runtime/               # Temp files
+      logs/                 # Per-session logs + activity logs
   requirements.md           # Requirements (optional)
 ```
 

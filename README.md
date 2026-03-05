@@ -98,7 +98,8 @@ your-project/
     tests.json              # 验证记录
     test.env                # 测试凭证（API Key 等，可选）
     playwright-auth.json    # Playwright 登录状态（可选，auth 命令生成）
-    .runtime/               # 临时文件（含日志）
+    .runtime/               # 临时文件
+      logs/                 # 每 session 独立日志 + activity log
   requirements.md           # 需求文档（可选）
 ```
 
@@ -107,6 +108,8 @@ your-project/
 **"Credit balance is too low"**：运行 `claude-coder setup` 重新配置 API Key。
 
 **中断恢复**：直接重新运行 `claude-coder run`，会从上次中断处继续。
+
+**长时间无响应**：模型处理复杂文件时可能出现 10-20 分钟的思考间隔（spinner 会显示红色警告），这是正常行为。超过 30 分钟无工具调用时 Harness 会自动中断并重试。可通过 `.env` 中 `SESSION_STALL_TIMEOUT=秒数` 调整阈值。
 
 **跳过任务**：将 `.claude-coder/tasks.json` 中该任务的 `status` 改为 `done`。
 

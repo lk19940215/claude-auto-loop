@@ -63,7 +63,6 @@ function paths() {
     runtime,
     phaseFile:        path.join(runtime, 'phase'),
     stepFile:         path.join(runtime, 'step'),
-    activityLog:      path.join(runtime, 'activity.log'),
     logsDir:          path.join(runtime, 'logs'),
   };
 }
@@ -107,6 +106,7 @@ function loadConfig() {
     defaultSonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL || '',
     defaultHaiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '',
     thinkingBudget: env.ANTHROPIC_THINKING_BUDGET || '',
+    stallTimeout: parseInt(env.SESSION_STALL_TIMEOUT, 10) || 1800,
     raw: env,
   };
 

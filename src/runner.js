@@ -301,6 +301,25 @@ async function run(requirement, opts = {}) {
       lastValidateLog: consecutiveFailures > 0 ? '上次校验失败' : '',
     });
 
+    if (sessionResult.stalled) {
+      log('warn', `Session ${session} 因停顿超时中断，跳过校验直接重试`);
+      consecutiveFailures++;
+      rollback(headBefore, '停顿超时');
+      if (consecutiveFailures >= MAX_RETRY) {
+        log('error', `连续失败 ${MAX_RETRY} 次，跳过当前任务`);
+        markTaskFailed();
+        consecutiveFailures = 0;
+      }
+      appendProgress({
+        session,
+        timestamp: new Date().toISOString(),
+        result: 'stalled',
+        cost: sessionResult.cost,
+        taskId,
+      });
+      continue;
+    }
+
     // Validate
     log('info', '开始 harness 校验 ...');
     const validateResult = await validate(headBefore);

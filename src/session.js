@@ -99,12 +99,23 @@ async function runCodingSession(sessionNum, opts = {}) {
   const taskId = opts.taskId || 'unknown';
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const logFile = path.join(p.logsDir, `${taskId}_session_${sessionNum}_${dateStr}.log`);
+  const activityLogFile = path.join(p.logsDir, `session_${sessionNum}.activity.log`);
   const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
-  indicator.start(sessionNum);
+  indicator.start(sessionNum, activityLogFile);
 
   const editCounts = {};
   const EDIT_THRESHOLD = 5;
+  const stallTimeoutMs = config.stallTimeout * 1000;
+  let stallDetected = false;
+
+  const stallChecker = setInterval(() => {
+    const idleMs = Date.now() - indicator.lastToolTime;
+    if (idleMs > stallTimeoutMs && !stallDetected) {
+      stallDetected = true;
+      log('warn', `无新工具调用超过 ${Math.floor(idleMs / 60000)} 分钟，自动中断 session`);
+    }
+  }, 30000);
 
   try {
     const queryOpts = buildQueryOptions(config, opts);
@@ -115,13 +126,18 @@ async function runCodingSession(sessionNum, opts = {}) {
         hooks: [async (input) => {
           inferPhaseStep(indicator, input.tool_name, input.tool_input);
 
-          const filePath = input.tool_input?.file_path || input.tool_input?.path || '';
-          if (['Write', 'Edit', 'MultiEdit'].includes(input.tool_name) && filePath) {
-            editCounts[filePath] = (editCounts[filePath] || 0) + 1;
-            if (editCounts[filePath] > EDIT_THRESHOLD) {
+          const target = input.tool_input?.file_path || input.tool_input?.path || '';
+          const toolSummary = target ? target.split('/').slice(-2).join('/') : '';
+          if (toolSummary) {
+            logStream.write(`[${new Date().toISOString()}] ${input.tool_name}: ${toolSummary}\n`);
+          }
+
+          if (['Write', 'Edit', 'MultiEdit'].includes(input.tool_name) && target) {
+            editCounts[target] = (editCounts[target] || 0) + 1;
+            if (editCounts[target] > EDIT_THRESHOLD) {
               return {
                 decision: 'block',
-                message: `已对 ${filePath} 编辑 ${editCounts[filePath]} 次，疑似死循环。请重新审视方案后再继续。`,
+                message: `已对 ${target} 编辑 ${editCounts[target]} 次，疑似死循环。请重新审视方案后再继续。`,
               };
             }
           }
@@ -135,21 +151,28 @@ async function runCodingSession(sessionNum, opts = {}) {
 
     const collected = [];
     for await (const message of session) {
+      if (stallDetected) {
+        log('warn', '停顿超时，中断消息循环');
+        break;
+      }
       collected.push(message);
       logMessage(message, logStream, indicator);
     }
 
+    clearInterval(stallChecker);
     logStream.end();
     indicator.stop();
 
     const result = extractResult(collected);
     return {
-      exitCode: 0,
+      exitCode: stallDetected ? 2 : 0,
       cost: result?.total_cost_usd ?? null,
       tokenUsage: result?.usage ?? null,
       logFile,
+      stalled: stallDetected,
     };
   } catch (err) {
+    clearInterval(stallChecker);
     logStream.end();
     indicator.stop();
     log('error', `Claude SDK 错误: ${err.message}`);

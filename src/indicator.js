@@ -9,15 +9,18 @@ class Indicator {
   constructor() {
     this.phase = 'thinking';
     this.step = '';
+    this.toolTarget = '';
     this.spinnerIndex = 0;
     this.timer = null;
     this.lastActivity = '';
+    this.lastToolTime = Date.now();
     this.sessionNum = 0;
     this.startTime = Date.now();
   }
 
-  start(sessionNum) {
+  start(sessionNum, activityLogPath) {
     this.sessionNum = sessionNum;
+    this.activityLogPath = activityLogPath || null;
     this.startTime = Date.now();
     this.timer = setInterval(() => this._render(), 500);
   }
@@ -45,8 +48,9 @@ class Indicator {
     const entry = `[${ts}] ${toolName}: ${summary}`;
     this.lastActivity = entry;
     try {
-      const p = paths();
-      fs.appendFileSync(p.activityLog, entry + '\n', 'utf8');
+      if (this.activityLogPath) {
+        fs.appendFileSync(this.activityLogPath, entry + '\n', 'utf8');
+      }
     } catch { /* ignore */ }
   }
 
@@ -74,8 +78,17 @@ class Indicator {
       ? `${COLOR.yellow}思考中${COLOR.reset}`
       : `${COLOR.green}编码中${COLOR.reset}`;
 
+    const idleMs = Date.now() - this.lastToolTime;
+    const idleMin = Math.floor(idleMs / 60000);
+
     let line = `${spinner} [Session ${this.sessionNum}] ${clock} ${phaseLabel} ${mm}:${ss}`;
-    if (this.step) line += ` | ${this.step}`;
+    if (idleMin >= 2) {
+      line += ` | ${COLOR.red}${idleMin}分无工具调用${COLOR.reset}`;
+    }
+    if (this.step) {
+      line += ` | ${this.step}`;
+      if (this.toolTarget) line += `: ${this.toolTarget}`;
+    }
     return line;
   }
 
@@ -93,6 +106,14 @@ class Indicator {
 // Phase-signal logic: infer phase/step from tool calls
 function inferPhaseStep(indicator, toolName, toolInput) {
   const name = (toolName || '').toLowerCase();
+
+  indicator.lastToolTime = Date.now();
+
+  const rawTarget = typeof toolInput === 'object'
+    ? (toolInput.file_path || toolInput.path || toolInput.command || toolInput.pattern || '')
+    : String(toolInput || '');
+  const shortTarget = rawTarget.split('/').slice(-2).join('/').slice(0, 40);
+  indicator.toolTarget = shortTarget;
 
   if (name === 'write' || name === 'edit' || name === 'multiedit' || name === 'str_replace_editor' || name === 'strreplace') {
     indicator.updatePhase('coding');
@@ -119,9 +140,23 @@ function inferPhaseStep(indicator, toolName, toolInput) {
     indicator.updateStep('查阅文档');
   }
 
-  const summary = typeof toolInput === 'object'
-    ? (toolInput.path || toolInput.command || toolInput.pattern || JSON.stringify(toolInput).slice(0, 80))
-    : String(toolInput || '').slice(0, 80);
+  let summary;
+  if (typeof toolInput === 'object') {
+    const target = toolInput.file_path || toolInput.path || '';
+    const cmd = toolInput.command || '';
+    const pattern = toolInput.pattern || '';
+    if (target) {
+      summary = target;
+    } else if (cmd) {
+      summary = cmd.slice(0, 200);
+    } else if (pattern) {
+      summary = `pattern: ${pattern}`;
+    } else {
+      summary = JSON.stringify(toolInput).slice(0, 200);
+    }
+  } else {
+    summary = String(toolInput || '').slice(0, 200);
+  }
   indicator.appendActivity(toolName, summary);
 }
 
