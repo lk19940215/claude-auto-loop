@@ -99,7 +99,7 @@ your-project/
     test.env                # 测试凭证（API Key 等，可选）
     playwright-auth.json    # Playwright 登录状态（可选，auth 命令生成）
     .runtime/               # 临时文件
-      logs/                 # 每 session 独立日志 + activity log
+      logs/                 # 每 session 独立日志（含工具调用记录）
   requirements.md           # 需求文档（可选）
 ```
 

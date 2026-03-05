@@ -211,25 +211,83 @@ function buildScanPrompt(projectType, requirement) {
 
 /**
  * Build user prompt for add sessions.
+ * Structure: Role (primacy) → Context → CoT → TaskGuide → Instruction (recency)
  */
 function buildAddPrompt(instruction) {
+  const p = paths();
+  const projectRoot = getProjectRoot();
   const taskGuide = buildTaskGuide();
+
+  // --- Context injection: pre-read project state ---
+  let profileContext = '';
+  if (fs.existsSync(p.profile)) {
+    try {
+      const profile = JSON.parse(fs.readFileSync(p.profile, 'utf8'));
+      const stack = profile.tech_stack || {};
+      const parts = [];
+      if (stack.backend?.framework) parts.push(`后端: ${stack.backend.framework}`);
+      if (stack.frontend?.framework) parts.push(`前端: ${stack.frontend.framework}`);
+      if (stack.backend?.language) parts.push(`语言: ${stack.backend.language}`);
+      if (parts.length) profileContext = `项目技术栈: ${parts.join(', ')}`;
+    } catch { /* ignore */ }
+  }
+
+  let taskContext = '';
+  let recentExamples = '';
+  try {
+    const taskData = loadTasks();
+    if (taskData) {
+      const stats = getStats(taskData);
+      const features = taskData.features || [];
+      const maxId = features.length ? features[features.length - 1].id : 'feat-000';
+      const maxPriority = features.length ? Math.max(...features.map(f => f.priority || 0)) : 0;
+      const categories = [...new Set(features.map(f => f.category))].join(', ');
+
+      taskContext = `已有 ${stats.total} 个任务（${stats.done} done, ${stats.pending} pending, ${stats.failed} failed）。` +
+        `最大 id: ${maxId}, 最大 priority: ${maxPriority}。已有 category: ${categories}。`;
+
+      const recent = features.slice(-3);
+      if (recent.length) {
+        recentExamples = '已有任务格式参考（保持一致性）：\n' +
+          recent.map(f => `  ${f.id}: "${f.description}" (category=${f.category}, steps=${f.steps.length}步, depends_on=[${f.depends_on.join(',')}])`).join('\n');
+      }
+    }
+  } catch { /* ignore */ }
+
   return [
-    '重要：这是任务追加 session，不是常规编码 session。不执行 6 步流程。',
+    // --- Primacy zone: role + identity ---
+    '你是资深需求分析师，擅长将模糊需求分解为可执行的原子任务。',
+    '这是任务追加 session，不是编码 session。你只分解任务，不实现代码。',
     '',
-    '步骤：',
-    '1. 读取 .claude-coder/tasks.json 了解已有任务和最大 id/priority',
-    '2. 读取 .claude-coder/project_profile.json 了解项目技术栈',
-    '3. 根据用户指令追加新任务（status: pending）',
+
+    // --- Context layer ---
+    profileContext,
+    taskContext,
+    recentExamples,
+    `项目绝对路径: ${projectRoot}`,
     '',
+
+    // --- CoT: explicit thinking steps ---
+    '执行步骤（按顺序，不可跳过）：',
+    '1. 读取 .claude-coder/tasks.json 和 .claude-coder/project_profile.json，全面了解项目现状',
+    '2. 分析用户指令：识别核心功能点，判断是单任务还是需要拆分为多任务',
+    '3. 检查重复：对比已有任务，避免功能重叠',
+    '4. 确定依赖：新任务的 depends_on 引用已有或新增任务的 id，形成 DAG',
+    '5. 分解任务：每个任务对应一个独立可测试的功能单元，description 简明（40字内），steps 具体可操作',
+    '6. 追加到 tasks.json，id 和 priority 从已有最大值递增，status: pending',
+    '7. git add -A && git commit -m "chore: add new tasks"',
+    '8. 写入 session_result.json',
+    '',
+
+    // --- Quality constraints ---
     taskGuide,
     '',
-    '新任务 id 和 priority 从已有最大值递增。不修改已有任务，不实现代码。',
-    'git add -A && git commit -m "chore: add new tasks"',
-    '写入 session_result.json',
+    '不修改已有任务，不实现代码。',
     '',
+
+    // --- Recency zone: user instruction (highest attention) ---
     `用户指令：${instruction}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 module.exports = {

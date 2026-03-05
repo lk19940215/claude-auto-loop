@@ -18,9 +18,8 @@ class Indicator {
     this.startTime = Date.now();
   }
 
-  start(sessionNum, activityLogPath) {
+  start(sessionNum) {
     this.sessionNum = sessionNum;
-    this.activityLogPath = activityLogPath || null;
     this.startTime = Date.now();
     this.timer = setInterval(() => this._render(), 500);
   }
@@ -44,14 +43,7 @@ class Indicator {
   }
 
   appendActivity(toolName, summary) {
-    const ts = new Date().toISOString();
-    const entry = `[${ts}] ${toolName}: ${summary}`;
-    this.lastActivity = entry;
-    try {
-      if (this.activityLogPath) {
-        fs.appendFileSync(this.activityLogPath, entry + '\n', 'utf8');
-      }
-    } catch { /* ignore */ }
+    this.lastActivity = `${toolName}: ${summary}`;
   }
 
   _writePhaseFile() {

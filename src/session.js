@@ -99,10 +99,9 @@ async function runCodingSession(sessionNum, opts = {}) {
   const taskId = opts.taskId || 'unknown';
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const logFile = path.join(p.logsDir, `${taskId}_session_${sessionNum}_${dateStr}.log`);
-  const activityLogFile = path.join(p.logsDir, `session_${sessionNum}.activity.log`);
   const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
-  indicator.start(sessionNum, activityLogFile);
+  indicator.start(sessionNum);
 
   const editCounts = {};
   const EDIT_THRESHOLD = 5;
@@ -127,9 +126,11 @@ async function runCodingSession(sessionNum, opts = {}) {
           inferPhaseStep(indicator, input.tool_name, input.tool_input);
 
           const target = input.tool_input?.file_path || input.tool_input?.path || '';
-          const toolSummary = target ? target.split('/').slice(-2).join('/') : '';
-          if (toolSummary) {
-            logStream.write(`[${new Date().toISOString()}] ${input.tool_name}: ${toolSummary}\n`);
+          const cmd = input.tool_input?.command || '';
+          const pattern = input.tool_input?.pattern || '';
+          const detail = target || cmd.slice(0, 200) || (pattern ? `pattern: ${pattern}` : '');
+          if (detail) {
+            logStream.write(`[${new Date().toISOString()}] ${input.tool_name}: ${detail}\n`);
           }
 
           if (['Write', 'Edit', 'MultiEdit'].includes(input.tool_name) && target) {

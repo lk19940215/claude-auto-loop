@@ -207,7 +207,7 @@ templates/
 | `session_result.json` | 每次 session 结束 | 当前 session 结果（扁平格式，向后兼容旧 `current` 包装） |
 | `playwright-auth.json` | `claude-coder auth` | Playwright 登录状态（cookies + localStorage） |
 | `tests.json` | 首次测试时 | 验证记录（防止反复测试） |
-| `.runtime/` | 运行时 | 临时文件（phase、step、logs/session_N.activity.log） |
+| `.runtime/` | 运行时 | 临时文件（phase、step、logs/）；工具调用记录合并到 session log |
 
 ---
 
@@ -450,7 +450,7 @@ query({
 ### V2 迁移条件（等待稳定后）
 
 1. V2 去掉 `unstable_` 前缀，正式发布
-2. V2 支持 Hooks（当前项目依赖 PreToolUse 做 spinner 和 activity log）
+2. V2 支持 Hooks（当前项目依赖 PreToolUse 做 spinner 和日志记录）
 3. V2 支持 Subagents（未来可能用于扫描 Agent / 编码 Agent 分离）
 
 ### 可利用但尚未使用的 V1 特性
